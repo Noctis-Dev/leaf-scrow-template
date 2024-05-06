@@ -1,42 +1,55 @@
-use gstd::{exec, msg, ActorId};
-use io::ScrowEvent;
+use gstd::{exec, msg, ActorId, String};
+use io::{EscrowEvent, Founder};
 
 use crate::contract_state_mut;
 
 #[derive(Default)]
-pub struct Scrow { }
+pub struct Escrow { }
 
-impl Scrow {
+impl Escrow {
 
     pub fn deposit(&self, fouder: ActorId) {
         let state = contract_state_mut();
         let amount = msg::value();
 
-        state.founders.push((fouder, (amount, state.actual_milestone)));
-        let _ = msg::reply(ScrowEvent::DeposidedCompleted { total_balance: exec::value_available() }, 0);
+        if let Some(milestone) = state.milestones.iter_mut().find(|milestone| milestone.is_active) {
+            milestone.founders.push(Founder {
+                founder_id: fouder.clone(),
+                amount,
+            });
+
+            let _ = msg::reply(EscrowEvent::DeposidedCompleted { total_balance: exec::value_available() }, 0);
+        }
+
+        let _ = msg::reply(EscrowEvent::Error { message: String::from("Deposit error") }, 0);
     }
 
     pub fn aprove(&self) {
         let state = contract_state_mut();
 
-        if state.actual_milestone == state.max_milestone_number {
-            panic!("this contract has been ended its lifecycle");
+        if let Some(milestone) = state.milestones.iter_mut().find(|milestone| milestone.is_active) {
+            milestone.is_active = false;
+            
+            let _ = msg::send(state.collector, EscrowEvent::AprovedCompleted, exec::value_available());
+            let _ = msg::reply(EscrowEvent::AprovedCompleted, exec::value_available());
         }
 
-        state.actual_milestone += 1;
-        
-        let _ = msg::reply(ScrowEvent::AprovedCompleted, exec::value_available());
+        let _ = msg::reply(EscrowEvent::Error { message: String::from("Approve error") }, exec::value_available());
     }
 
     pub fn reject(&self) {
         let state = contract_state_mut();
 
-        for founder in state.founders.iter() {
-            if founder.1.1 == state.actual_milestone {
-                let _ = msg::send(founder.0, "rejected value", founder.1.0);
+        if let Some(milestone) = state.milestones.iter_mut().find(|milestone| milestone.is_active) {
+            milestone.is_active = false;
+            
+            for fouder in milestone.founders.iter() {
+                let _ = msg::send(fouder.founder_id, String::from("REFOUNDED VALUE"), fouder.amount);
             }
+
+            let _ = msg::reply(EscrowEvent::RejectedCompleted, exec::value_available());
         }
 
-        let _ = msg::reply(ScrowEvent::RejectedCompleted, 0);
+        let _ = msg::reply(EscrowEvent::RejectedCompleted, 0);
     }
 }
