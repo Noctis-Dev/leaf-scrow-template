@@ -1,1 +1,1 @@
-target/wasm32-unknown-unknown/release/scrow_template
+target/wasm32-unknown-unknown/debug/scrow_template
